@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using OpenFeature.Constant;
+using OpenFeature.Error;
 using OpenFeature.Extention;
 using OpenFeature.Model;
 
@@ -91,17 +92,23 @@ namespace OpenFeature
             {
                 await TriggerBeforeHooks(allHooks, hookContext, options);
 
-                response = (await resolveValueDelegate.Invoke(flagKey, defaultValue, hookContext.EvaluationContext, options))
+                response = (await resolveValueDelegate.Invoke(flagKey, defaultValue, hookContext.EvaluationContext,
+                        options))
                     .ToFlagEvaluationDetails();
-                
+
                 await TriggerAfterHooks(allHooksReversed, hookContext, response, options);
             }
-            catch (Exception e)
+            catch (OpenFeatureException ex)
             {
-                OpenFeature.Logger.LogError(e, "Error while evaluating flag {FlagKey}", flagKey);
-                // TODO needs to handle error codes being thrown from provider that maps to Errors enums
-                response = new FlagEvaluationDetails<T>(flagKey, defaultValue, e.Message, Reason.Error, string.Empty);
-                await TriggerErrorHooks(allHooksReversed, hookContext, e, options);
+                OpenFeature.Logger.LogError(ex, "Error while evaluating flag {FlagKey}. Error {ErrorType}", flagKey, ex.ErrorTypeDescription);
+                response = new FlagEvaluationDetails<T>(flagKey, defaultValue, ex.ErrorTypeDescription, Reason.Error, string.Empty);
+                await TriggerErrorHooks(allHooksReversed, hookContext, ex, options);
+            }
+            catch (Exception ex)
+            {
+                OpenFeature.Logger.LogError(ex, "Error while evaluating flag {FlagKey}", flagKey);
+                response = new FlagEvaluationDetails<T>(flagKey, defaultValue, ErrorType.General.GetDescription(), Reason.Error, string.Empty);
+                await TriggerErrorHooks(allHooksReversed, hookContext, ex, options);
             }
             finally
             {
